@@ -41,14 +41,14 @@ from utils.general import (LOGGER, check_file, check_img_size, check_imshow, che
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
 ROOT = '.'
-
+# 0: barrier 1:coast
 @torch.no_grad()
 def run(
-        weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
-        source=ROOT / 'data/images',  # file/dir/URL/glob, 0 for webcam
-        data=ROOT / 'data/coco128.yaml',  # dataset.yaml path
-        imgsz=(640, 640),  # inference size (height, width)
-        conf_thres=0.25,  # confidence threshold
+        weights='./best.pt',  # model.pt path(s)
+        source='./ddirs',  # file/dir/URL/glob, 0 for webcam
+        data='./data/coco128.yaml',  # dataset.yaml path
+        imgsz=(1920, 1080),  # inference size (height, width)
+        conf_thres=0.35,  # confidence threshold
         iou_thres=0.45,  # NMS IOU threshold
         max_det=1000,  # maximum detections per image
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
@@ -59,7 +59,7 @@ def run(
         dnn=False,  # use OpenCV DNN for ONNX inference
 ):
     source = str(source)
-
+    num2cls = {0: 'barrier', 1: 'coast'}
     # Load model
     device = select_device(device)
     model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
@@ -73,51 +73,69 @@ def run(
 
     # Run inference
     model.warmup(imgsz=(1 if pt else bs, 3, *imgsz))  # warmup
-    seen, dt = 0, [0.0, 0.0, 0.0]
+    all_objs = []
     for path, im, im0s, vid_cap, s in dataset:
-        t1 = time_sync()
         im = torch.from_numpy(im).to(device)
         im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
         im /= 255  # 0 - 255 to 0.0 - 1.0
         if len(im.shape) == 3:
             im = im[None]  # expand for batch dim
-        t2 = time_sync()
-        dt[0] += t2 - t1
-
+        
         # Inference
         pred = model(im, augment=augment, visualize=False)
-        t3 = time_sync()
-        dt[1] += t3 - t2
-
+        
         # NMS
         pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
-        dt[2] += time_sync() - t3
-
-        # Second-stage classifier (optional)
-        # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
-
-        # Process predictions
         
         for i, det in enumerate(pred):  # per image
-            seen += 1
-            p, im0, frame = path, im0s.copy(), getattr(dataset, 'frame', 0)
-            print("===========blow is p===============")
-            print(p) 
-            s += '%gx%g ' % im.shape[2:]  # print string
+            p, im0 = path, im0s.copy()       
             
-            if len(det):
+            if len(det) > 0:
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
                 # Write results
                 for *xyxy, conf, cls in reversed(det):
-                    print("=========blow is xyxy===================")
-                    print(xyxy, conf, cls)
-
+                    label = num2cls[int(cls)]
+                    img_id = p[:-4]
+                    confidence = float(conf)
+                    xmin = int(xyxy[0]) if int(xyxy[0]) > 0 else 0
+                    ymin = int(xyxy[1]) if int(xyxy[1]) > 0 else 0
+                    xmax = int(xyxy[2]) if int(xyxy[2]) < 1920 else 1920
+                    ymax = int(xyxy[3]) if int(xyxy[3]) < 1080 else 1080
+                    all_objs.append([label, img_id, confidence, 
+                                    xmin, ymin, xmax, ymax])
+            else:
+                all_objs.append(['', p[:-4],'','','','',''])
+    print(all_objs)
+    return all_objs
+            
+def vid2img(file_path) :
+    if not os.path.exists('./ddirs/'):
+        os.makedirs('./ddirs')
+    for file in os.listdir(file_path):
+        path = os.path.join(file_path, file)
+        if path[-4:] != '.mp4':
+            continue
+        vidcap = cv2.VideoCapture(path)
+        if not vidcap.isOpened():
+            return False
+        success,image1 = vidcap.read()
+        image2 = image1
+        while success:
+            image2 = image1
+            success, image1 = vidcap.read()
+        pic_name = os.path.basename(path)[:-4] + ".jpg"
+        c = os.path.join("./ddirs/", pic_name)
+        cv2.imwrite(c, image2)
+    return True
 
 def main():
     check_requirements(exclude=('tensorboard', 'thop'))
     run()
 
+def invoke(_input:str) :
+    vid2img(_input)
+    main()
 
 if __name__ == "__main__":
-    main()
+    invoke('')
