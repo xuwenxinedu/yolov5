@@ -33,7 +33,7 @@ import sys
 import torch
 import torch.backends.cudnn as cudnn
 
-
+import pandas as pd
 from models.common import DetectMultiBackend
 from utils.dataloaders import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
 from utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr, cv2,
@@ -42,6 +42,14 @@ from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
 ROOT = '.'
 # 0: barrier 1:coast
+
+def write_csv(objs):
+
+    df = pd.DataFrame(data=objs, columns=["label", "img_id", "confidence",
+                        "xmin", "ymin", "xmax", "ymax"])
+    df.to_csv("/home/mw/project/results.csv", index=False)
+
+
 @torch.no_grad()
 def run(
         weights='./best.pt',  # model.pt path(s)
@@ -89,7 +97,7 @@ def run(
         
         for i, det in enumerate(pred):  # per image
             p, im0 = path, im0s.copy()       
-            
+            p = os.path.basename(p)
             if len(det) > 0:
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
@@ -107,6 +115,7 @@ def run(
             else:
                 all_objs.append(['', p[:-4],'','','','',''])
     print(all_objs)
+    write_csv(all_objs)
     return all_objs
             
 def vid2img(file_path) :
